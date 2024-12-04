@@ -1,0 +1,17 @@
+collections:
+  - methods:
+      - getBlock
+      - getBlocks
+    endpoints:
+      - address: "http://127.0.0.1:4001"
+        retries: 3
+        timeout_secs: 5
+      - address: "http://127.0.0.1:4002"
+        retries: 2
+        timeout_secs: 10
+  - methods:
+      - getTransaction
+    endpoints:
+      - address: "http://127.0.0.1:5001"
+        retries: 5
+        timeout_secs: 3

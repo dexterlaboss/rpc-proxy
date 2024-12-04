@@ -1,0 +1,26 @@
+
+FROM ubuntu:20.04
+
+# Install necessary dependencies
+RUN apt-get update && apt-get install -y \
+    libssl-dev \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /usr/local/bin
+
+# Copy the built binary from host to container
+COPY target/aarch64-unknown-linux-gnu/release/rpc-proxy .
+COPY docker/config/config.yaml .
+
+# Make the binary executable
+RUN chmod +x rpc-proxy
+
+EXPOSE 8080
+
+ENV RUST_LOG=debug
+
+# Set entrypoint
+ENTRYPOINT ["./rpc-proxy"]

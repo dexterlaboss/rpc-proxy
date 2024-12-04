@@ -1,0 +1,80 @@
+
+services:
+  hbase-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.hbase
+    container_name: hbase-1
+    ports:
+      - "9090:9090"    # Thrift port
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "16010"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  hbase-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.hbase
+    container_name: hbase-2
+    ports:
+      - "9091:9090"    # Thrift port
+    networks:
+      - app-network
+    healthcheck:
+      test: [ "CMD", "nc", "-z", "localhost", "16010" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  archival-rpc-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.archival-rpc
+    container_name: archival-rpc-1
+    depends_on:
+      hbase-1:
+        condition: service_healthy
+    networks:
+      - app-network
+    ports:
+      - "8081:8080"
+    entrypoint: ["/usr/local/bin/archival-rpc"]
+    command: ["--rpc-hbase-address=hbase-1:9090"]
+    restart: unless-stopped
+
+  archival-rpc-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.archival-rpc
+    container_name: archival-rpc-2
+    depends_on:
+      hbase-2:
+        condition: service_healthy
+    networks:
+      - app-network
+    ports:
+      - "8082:8080"
+    entrypoint: ["/usr/local/bin/archival-rpc"]
+    command: ["--rpc-hbase-address=hbase-2:9091"]
+    restart: unless-stopped
+
+  rpc-proxy:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.proxy
+    container_name: rpc-proxy
+    networks:
+      - app-network
+    ports:
+      - "8080:8080"
+    entrypoint: ["/usr/local/bin/rpc-proxy"]
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
+

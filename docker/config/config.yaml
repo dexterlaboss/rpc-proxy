@@ -1,0 +1,29 @@
+routes:
+  - methods:
+      - getBlock
+    endpoints:
+      - address: "http://archival-rpc-1:8081"
+        retries: 3
+        timeout_secs: 5
+      - address: "http://archival-rpc-1:8082"
+        retries: 2
+        timeout_secs: 5
+  - methods:
+      - getTransaction
+    endpoints:
+      - address: "http://archival-rpc-1:8081"
+        retries: 5
+        timeout_secs: 3
+      - address: "http://archival-rpc-2:8082"
+        retries: 2
+        timeout_secs: 5
+  - methods:
+      - getBlocks
+      - getBlocksWithLimit
+    endpoints:
+      - address: "http://archival-rpc-1:8081"
+        retries: 5
+        timeout_secs: 3
+      - address: "http://archival-rpc-2:8082"
+        retries: 2
+        timeout_secs: 5

@@ -1,0 +1,28 @@
+
+FROM ubuntu:22.04
+
+# Install necessary dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    libssl-dev \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /usr/local/bin
+
+# Define environment variables for RPC_VERSION
+ARG RPC_VERSION=1.5.23
+ENV RPC_VERSION=${RPC_VERSION}
+
+# Download archival-rpc binary from GitHub releases
+RUN curl -L -o archival-rpc "https://github.com/dexterlaboss/archival-rpc/releases/download/v${RPC_VERSION}/archival-rpc_v${RPC_VERSION}_linux_arm64" \
+    && chmod +x archival-rpc
+
+EXPOSE 8080
+
+ENV RUST_LOG=debug
+
+# Set entrypoint
+ENTRYPOINT ["./archival-rpc"]

@@ -1,0 +1,69 @@
+FROM ubuntu:20.04
+
+# Dependency versions
+ENV HBASE_VERSION=2.4.11 \
+    JAVA_VERSION=openjdk-8
+
+# RUN apt-key adv --refresh-keys --keyserver keyserver.ubuntu.com
+
+RUN apt-get update && apt-get install -y \
+    sudo \
+    gpg \
+    curl \
+    software-properties-common \
+    --no-install-recommends && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# RUN sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 871920D1991BC93C \
+#    curl -sS https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C | gpg --dearmor | sudo tee /usr/share/keyrings/ubuntu-ports-archive-keyring.gpg > /dev/null \
+#    echo "deb [signed-by=/usr/share/keyrings/ubuntu-ports-archive-keyring.gpg] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/ubuntu-ports.list
+
+# Install necessary dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    supervisor \
+    netcat \
+    net-tools \
+    python3-pip \
+    ${JAVA_VERSION}-jdk-headless \
+    && pip3 install supervisor-stdout \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up environment variables for Java
+ENV JAVA_HOME="/usr/lib/jvm/java-8-openjdk-arm64" \
+    PATH="$JAVA_HOME/bin:/opt/hbase/bin:$PATH"
+
+# Install HBase
+WORKDIR /opt
+RUN curl -O https://archive.apache.org/dist/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-bin.tar.gz \
+    && tar xzf hbase-${HBASE_VERSION}-bin.tar.gz \
+    && mv hbase-${HBASE_VERSION} hbase \
+    && rm hbase-${HBASE_VERSION}-bin.tar.gz
+
+# Set up Supervisor
+RUN mkdir -p /var/run/supervisor /data/hbase /data/zookeeper
+COPY config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Copy HBase configuration and necessary scripts
+COPY config/hbase-site.xml /opt/hbase/conf/hbase-site.xml
+# COPY hbase/*.sh /usr/local/bin/
+# RUN chmod +x /usr/local/bin/*.sh
+
+# Copy setup and service start scripts
+COPY scripts/*.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/*.sh
+
+# Expose necessary ports
+# EXPOSE 2181 9090 16000 16010 16020 16030
+EXPOSE 9090
+
+# Create data volumes
+VOLUME /data/hbase /data/zookeeper
+
+ENV _JAVA_OPTIONS="-Djava.net.preferIPv4Stack=true"
+
+# Start the main script
+CMD ["/usr/local/bin/start.sh"]
