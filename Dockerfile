@@ -1,5 +1,5 @@
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 RUN mkdir -p /dexter
 WORKDIR /dexter

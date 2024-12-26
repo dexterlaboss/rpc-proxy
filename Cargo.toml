@@ -1,6 +1,6 @@
 [package]
 name = "rpc-proxy"
-version = "1.0.3"
+version = "1.0.4"
 edition = "2021"
 authors = ["Aurimas N <aurimas.n@dexterlab.com>"]
 description = "A proxy service for Solana JSON-RPC HTTP requests."
