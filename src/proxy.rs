@@ -1,10 +1,17 @@
-use reqwest::{Client, StatusCode};
+use reqwest::{
+    Client,
+};
 use serde::{Deserialize, Serialize};
 use tokio::time::{timeout, Duration};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::config::{EndpointConfig, MethodEndpointCollection, RpcConfig};
-use crate::metrics::{REQUESTS_TOTAL, REQUESTS_SUCCESS, REQUESTS_FAILURE, ENDPOINT_RETRIES, REQUEST_LATENCY};
+use crate::metrics::{
+    REQUESTS_TOTAL,
+    REQUESTS_SUCCESS,
+    REQUESTS_FAILURE,
+    REQUEST_LATENCY,
+};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RpcRequest {
@@ -54,11 +61,23 @@ impl RpcProxy {
             .find(|c| c.methods.contains(&request.method))
             .ok_or_else(|| format!("No endpoints configured for method: {}", request.method))?;
 
+        let start_time = tokio::time::Instant::now(); // Track the start time
+
         for endpoint in &route.endpoints {
             match self.process_request_with_endpoint(endpoint, &request).await {
                 Ok(Some(response)) => {
                     REQUESTS_SUCCESS.inc();
                     timer.observe_duration();
+                    let duration = start_time.elapsed(); // Calculate the elapsed time
+                    if duration > Duration::from_secs(1) {
+                        // Log the request if it took longer than 1 second
+                        debug!(
+                        method = %request.method,
+                        params = %serde_json::to_string(&request.params).unwrap_or_else(|_| "Failed to serialize params".to_string()),
+                        duration = ?duration,
+                        "Request took longer than 1 second"
+                    );
+                    }
                     return Ok(response);
                 }
                 Ok(None) => {
@@ -69,6 +88,17 @@ impl RpcProxy {
                     error!(endpoint = %endpoint.address, %e, "Error processing request");
                 }
             }
+        }
+
+        let duration = start_time.elapsed(); // Calculate the elapsed time
+        if duration > Duration::from_secs(1) {
+            // Log the request if it took longer than 1 second
+            info!(
+                method = %request.method,
+                params = %serde_json::to_string(&request.params).unwrap_or_else(|_| "Failed to serialize params".to_string()),
+                duration = ?duration,
+                "Request took longer than 1 second"
+            );
         }
 
         timer.observe_duration();
