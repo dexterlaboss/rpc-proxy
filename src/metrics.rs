@@ -1,9 +1,8 @@
 use prometheus::{
-    Encoder, Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
+    Encoder, Histogram, HistogramOpts, IntCounter, IntCounterVec,
+    TextEncoder,
 };
-use tracing::info;
 
-/// Metrics registration
 lazy_static::lazy_static! {
     pub static ref REQUESTS_TOTAL: IntCounter = prometheus::register_int_counter!(
         "rpc_requests_total",

@@ -6,7 +6,6 @@ use axum::{
 };
 use clap::Parser;
 use std::sync::Arc;
-use tower::ServiceBuilder;
 use tracing::{info, Level};
 use tracing_subscriber;
 
