@@ -6,7 +6,8 @@ use axum::{
 };
 use clap::Parser;
 use std::sync::Arc;
-use tracing::{info, Level};
+use tracing::{info, debug, Level};
+use tracing_subscriber::{EnvFilter, fmt};
 use tracing_subscriber;
 
 use config::load_config_from_yaml;
@@ -50,7 +51,9 @@ async fn handle_http_request(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .init();
 
     // Parse command-line arguments

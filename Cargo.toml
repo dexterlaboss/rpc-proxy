@@ -1,6 +1,6 @@
 [package]
 name = "rpc-proxy"
-version = "1.0.5"
+version = "1.0.6"
 edition = "2021"
 authors = ["Aurimas N <aurimas.n@dexterlab.com>"]
 description = "A proxy service for Solana JSON-RPC HTTP requests."
@@ -13,7 +13,7 @@ serde_yaml = "0.9"
 tokio = { version = "1", features = ["full"] }
 tower = "0.4"
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "=4.1.14", features = ["derive"] }
 prometheus = "0.13.4"
 serde_json = "1.0"
