@@ -1,17 +1,12 @@
-use reqwest::{
-    Client,
-};
 use serde::{Deserialize, Serialize};
-use tokio::time::{timeout, Duration};
+use serde_json::json;
+use tokio::time::{Duration};
 use tracing::{debug, error, info};
 
-use crate::config::{EndpointConfig, MethodEndpointCollection, RpcConfig};
-use crate::metrics::{
-    REQUESTS_TOTAL,
-    REQUESTS_SUCCESS,
-    REQUESTS_FAILURE,
-    REQUEST_LATENCY,
-};
+use crate::config::{RpcConfig};
+use crate::metrics::{REQUESTS_TOTAL, REQUESTS_SUCCESS, REQUESTS_FAILURE, REQUEST_LATENCY};
+use crate::endpoint::{Endpoint, EndpointResult};
+use crate::client::HttpClient;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RpcRequest {
@@ -30,150 +25,150 @@ pub struct RpcResponse {
 }
 
 pub struct RpcProxy {
-    routes: Vec<MethodEndpointCollection>,
-    http_client: Client,
+    routes: Vec<Route>,
+}
+
+struct Route {
+    methods: Vec<String>,
+    endpoints: Vec<Endpoint>,
 }
 
 impl RpcProxy {
-    pub fn new(config: RpcConfig) -> Self {
-        let http_client = Client::builder()
-            .build()
-            .expect("Failed to build HTTP client");
-        Self {
-            routes: config.routes,
-            http_client,
-        }
+    /// Creates a new RpcProxy instance.
+    pub fn new(config: RpcConfig, http_client: HttpClient) -> Self {
+        let routes = config
+            .routes
+            .into_iter()
+            .map(|collection| {
+                let endpoints = collection
+                    .endpoints
+                    .into_iter()
+                    .map(|endpoint_config| Endpoint::new(endpoint_config, http_client.clone()))
+                    .collect();
+                Route {
+                    methods: collection.methods,
+                    endpoints,
+                }
+            })
+            .collect();
+
+        Self { routes }
     }
 
     /// Forwards a JSON-RPC request to the appropriate endpoints based on the method.
-    pub async fn forward_request(
-        &self,
-        request: RpcRequest,
-    ) -> Result<RpcResponse, String> {
+    pub async fn forward_request(&self, request: RpcRequest) -> Result<RpcResponse, String> {
         REQUESTS_TOTAL.inc();
         let timer = REQUEST_LATENCY.start_timer();
-
-        debug!(method = %request.method, "Forwarding JSON-RPC request");
+        let start_time = tokio::time::Instant::now();
 
         let route = self
             .routes
             .iter()
-            .find(|c| c.methods.contains(&request.method))
-            .ok_or_else(|| format!("No endpoints configured for method: {}", request.method))?;
+            .find(|route| route.methods.contains(&request.method));
 
-        let start_time = tokio::time::Instant::now(); // Track the start time
-
-        for endpoint in &route.endpoints {
-            match self.process_request_with_endpoint(endpoint, &request).await {
-                Ok(Some(response)) => {
-                    REQUESTS_SUCCESS.inc();
-                    timer.observe_duration();
-                    let duration = start_time.elapsed(); // Calculate the elapsed time
-                    if duration > Duration::from_secs(1) {
-                        // Log the request if it took longer than 1 second
-                        debug!(
-                        method = %request.method,
-                        params = %serde_json::to_string(&request.params).unwrap_or_else(|_| "Failed to serialize params".to_string()),
-                        duration = ?duration,
-                        "Request took longer than 1 second"
-                    );
-                    }
-                    return Ok(response);
-                }
-                Ok(None) => {
-                    debug!(endpoint = %endpoint.address, "Null result; moving to next endpoint");
-                }
-                Err(e) => {
-                    REQUESTS_FAILURE.inc();
-                    error!(endpoint = %endpoint.address, %e, "Error processing request");
-                }
-            }
+        if route.is_none() {
+            REQUESTS_FAILURE.inc();
+            timer.observe_duration();
+            return Ok(RpcResponse {
+                jsonrpc: "2.0".to_string(),
+                result: None,
+                error: Some(json!({
+                    "code": -32601,
+                    "message": "Method not found"
+                })),
+                id: request.id.clone(),
+            });
         }
 
-        let duration = start_time.elapsed(); // Calculate the elapsed time
+        let route = route.unwrap();
+        let result = self.try_endpoints(&route.endpoints, &request).await;
+
+        let duration = start_time.elapsed();
+        timer.observe_duration();
+
         if duration > Duration::from_secs(1) {
-            // Log the request if it took longer than 1 second
             info!(
                 method = %request.method,
-                params = %serde_json::to_string(&request.params).unwrap_or_else(|_| "Failed to serialize params".to_string()),
+                params = %serde_json::to_string(&request.params)
+                    .unwrap_or_else(|_| "Failed to serialize params".to_string()),
                 duration = ?duration,
                 "Request took longer than 1 second"
             );
         }
 
-        timer.observe_duration();
-        Err("Failed to process request after retries.".to_string())
+        result
     }
 
-    async fn process_request_with_endpoint(
+    /// Tries a list of endpoints for the given request.
+    async fn try_endpoints(
         &self,
-        endpoint: &EndpointConfig,
+        endpoints: &[Endpoint],
         request: &RpcRequest,
-    ) -> Result<Option<RpcResponse>, String> {
-        let timeout_duration = Duration::from_secs(endpoint.timeout_secs);
+    ) -> Result<RpcResponse, String> {
+        let mut last_response: Option<RpcResponse> = None;
 
-        for attempt in 1..=endpoint.retries {
-            debug!(endpoint = %endpoint.address, attempt, "Attempting to send request");
+        for endpoint in endpoints {
+            match endpoint.send_request_with_retry(request).await {
+                Ok(EndpointResult::Response(response)) => {
+                    REQUESTS_SUCCESS.inc();
 
-            match timeout(timeout_duration, self.send_request_to_endpoint(endpoint, request)).await {
-                Ok(Ok(Some(response))) => return Ok(Some(response)),
-                Ok(Ok(None)) => return Ok(None), // Null result; try next endpoint
-                Ok(Err(e)) => {
-                    if attempt == endpoint.retries {
-                        error!(endpoint = %endpoint.address, %e, "Max retries reached for endpoint");
-                        return Err(format!("Error after retries: {}", e));
+                    // Got a non-empty result, return it immediately.
+                    if response.result.is_some() {
+                        return Ok(response);
                     }
-                    debug!(endpoint = %endpoint.address, attempt, "Retrying due to error");
+
+                    last_response = Some(response);
                 }
-                Err(_) => {
-                    error!(endpoint = %endpoint.address, "Request timed out");
-                    if attempt == endpoint.retries {
-                        return Err("Timeout after retries".to_string());
-                    }
+                Ok(EndpointResult::SkipToNext(None)) => {
+                    REQUESTS_FAILURE.inc();
+                    debug!(
+                        endpoint = %endpoint.config().address,
+                        "Skipping endpoint due to empty body"
+                    );
                 }
+                Ok(EndpointResult::SkipToNext(Some(null_response))) => {
+                    REQUESTS_FAILURE.inc();
+                    last_response = Some(null_response);
+                    debug!(
+                        endpoint = %endpoint.config().address,
+                        "Skipping endpoint due to null result"
+                    );
+                }
+                Ok(EndpointResult::Error(err)) => {
+                    REQUESTS_FAILURE.inc();
+                    error!(
+                        endpoint = %endpoint.config().address,
+                        %err,
+                        "Error processing request"
+                    );
+
+                    last_response = Some(RpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result: None,
+                        error: Some(json!({
+                            "code": -32000,
+                            "message": err.to_string()
+                        })),
+                        id: request.id.clone(),
+                    });
+                }
+                Err(_) => continue,
             }
         }
 
-        Ok(None)
-    }
-
-    async fn send_request_to_endpoint(
-        &self,
-        endpoint: &EndpointConfig,
-        request: &RpcRequest,
-    ) -> Result<Option<RpcResponse>, String> {
-        let response = self
-            .http_client
-            .post(&endpoint.address)
-            .json(request)
-            .send()
-            .await
-            .map_err(|e| format!("HTTP request failed: {}", e))?;
-
-        if response.status().is_server_error() {
-            return Err(format!(
-                "HTTP server error: {}",
-                response.status()
-            ));
+        if let Some(response) = last_response {
+            return Ok(response);
         }
 
-        if !response.status().is_success() {
-            return Err(format!(
-                "HTTP client error: {}",
-                response.status()
-            ));
-        }
-
-        let rpc_response: RpcResponse = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse JSON response: {}", e))?;
-
-        if rpc_response.result.is_none() {
-            debug!(endpoint = %endpoint.address, "Received null result");
-            return Ok(None);
-        }
-
-        Ok(Some(rpc_response))
+        Ok(RpcResponse {
+            jsonrpc: "2.0".to_string(),
+            result: None,
+            error: Some(json!({
+                "code": -32000,
+                "message": "Failed to process request"
+            })),
+            id: request.id.clone(),
+        })
     }
 }
+

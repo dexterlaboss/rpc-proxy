@@ -6,17 +6,14 @@ use axum::{
 };
 use clap::Parser;
 use std::sync::Arc;
-use tracing::{info, debug, Level};
-use tracing_subscriber::{EnvFilter, fmt};
+use tracing::{info};
+use tracing_subscriber::{EnvFilter};
 use tracing_subscriber;
 
-use config::load_config_from_yaml;
-use proxy::{RpcProxy, RpcRequest, RpcResponse};
-use metrics::metrics_handler;
-
-mod proxy;
-mod config;
-mod metrics;
+use rpc_proxy::proxy::{RpcProxy, RpcRequest, RpcResponse};
+use rpc_proxy::config::load_config_from_yaml;
+use rpc_proxy::metrics::metrics_handler;
+use rpc_proxy::client::HttpClient;
 
 /// Command-line arguments for the RPC Proxy.
 #[derive(Parser, Debug)]
@@ -61,12 +58,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load configuration from YAML
     let config = load_config_from_yaml(&args.config_path);
-    let proxy = Arc::new(RpcProxy::new(config));
+
+    // Create HTTP client
+    // let http_client = reqwest::Client::builder()
+    //     .build()
+    //     .expect("Failed to build HTTP client");
+
+    let http_client = HttpClient::new();
+
+    // Initialize the proxy
+    let proxy = Arc::new(RpcProxy::new(config, http_client));
 
     // Set up the HTTP server
     let app_state = AppState { proxy };
 
-    // Set up the HTTP server
     let app = Router::new()
         .route("/", post(handle_http_request))
         .route("/metrics", get(metrics_handler))

@@ -1,6 +1,6 @@
 [package]
 name = "rpc-proxy"
-version = "1.0.6"
+version = "1.1.0"
 edition = "2021"
 authors = ["Aurimas N <aurimas.n@dexterlab.com>"]
 description = "A proxy service for Solana JSON-RPC HTTP requests."
@@ -19,4 +19,11 @@ prometheus = "0.13.4"
 serde_json = "1.0"
 lazy_static = "1.4"
 futures = "0.3"
+thiserror = "1.0"
 
+[dev-dependencies]
+mockito = "0.31"
+
+[[bin]]
+name = "rpc-proxy"
+path = "src/main.rs"
