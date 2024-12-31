@@ -1060,7 +1060,7 @@ dependencies = [
 
 [[package]]
 name = "rpc-proxy"
-version = "1.1.0"
+version = "1.1.2025"
 dependencies = [
  "axum",
  "clap",
