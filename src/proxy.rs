@@ -16,7 +16,7 @@ pub struct RpcRequest {
     pub id: serde_json::Value,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct RpcResponse {
     pub jsonrpc: String,
     pub result: Option<serde_json::Value>,
@@ -31,6 +31,33 @@ pub struct RpcProxy {
 struct Route {
     methods: Vec<String>,
     endpoints: Vec<Endpoint>,
+}
+
+impl Serialize for RpcResponse {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+
+        let mut map = serializer.serialize_map(None)?;
+
+        // Common fields
+        map.serialize_entry("jsonrpc", &self.jsonrpc)?;
+        map.serialize_entry("id", &self.id)?;
+
+        // Include `result` only for non-error responses
+        if self.error.is_none() {
+            map.serialize_entry("result", &self.result)?;
+        }
+
+        // Include `error` only for error responses
+        if let Some(error) = &self.error {
+            map.serialize_entry("error", error)?;
+        }
+
+        map.end()
+    }
 }
 
 impl RpcProxy {

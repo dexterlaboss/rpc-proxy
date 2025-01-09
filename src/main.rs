@@ -6,6 +6,7 @@ use axum::{
 };
 use clap::Parser;
 use std::sync::Arc;
+// use reqwest::Proxy;
 use tracing::{info};
 use tracing_subscriber::{EnvFilter};
 use tracing_subscriber;
