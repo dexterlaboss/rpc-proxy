@@ -12,7 +12,7 @@ use crate::client::HttpClient;
 pub struct RpcRequest {
     pub jsonrpc: String,
     pub method: String,
-    pub params: serde_json::Value,
+    pub params: Option<serde_json::Value>,
     pub id: serde_json::Value,
 }
 
